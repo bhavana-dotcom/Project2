@@ -1,0 +1,1067 @@
+---
+title: "Using Support Vector Machines and Regularized Regression for Bankruptcy Prediction in R"
+author: "Bhavana Kappala"
+date: "2025-03-18"
+output:
+  html_document:  
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    number_sections: no
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: no
+    fig_width: 3
+    fig_height: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+
+```{=html}
+
+<style type="text/css">
+
+/* Cascading Style Sheets (CSS) is a stylesheet language used to describe the presentation of a document written in HTML or XML. it is a simple mechanism for adding style (e.g., fonts, colors, spacing) to Web documents. */
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 22px;
+  font-weight: bold;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 18px;
+  font-weight: bold;
+  font-family: system-ui;
+  color: navy;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+  font-weight: bold;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: center;
+    font-weight: bold;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+    font-weight: bold;
+}
+
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+
+body { background-color:white; }
+
+.highlightme { background-color:yellow; }
+
+p { background-color:white; }
+
+</style>
+```
+
+
+
+```{r setup, include=FALSE}
+# code chunk specifies whether the R code, warnings, and output 
+# will be included in the output files.
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+
+if (!require("smotefamily")) {
+install.packages("smotefamily")
+library(smotefamily)  # For SMOTE
+}
+
+if (!require("htmltools")) {
+# Update the htmltools package
+install.packages("htmltools")
+library(htmltools)
+}
+
+if (!require("plotly")) {
+install.packages("plotly")
+# Load the plotly package
+library(plotly)
+}
+
+if (!require("tidyverse")) {
+   install.packages("tidyverse")
+library(tidyverse)
+}
+if (!require("VIM")) {
+install.packages("VIM")  # For KNN imputation
+library(VIM)
+}
+if (!require("caret")) {
+install.packages("caret")  # For one-hot encoding
+  library(caret)
+}
+if (!require("mice")) {
+install.packages("mice")   # For multiple imputation (optional)
+library(mice)
+}
+
+if (!require("pROC")) {
+install.packages("pROC")   # For ROC Curve
+library(pROC)
+}
+if (!require("caTools")) {
+install.packages("caTools")   # For Splitting Data
+library(caTools)
+}
+
+if (!require("ggcorrplot")) {
+install.packages("ggcorrplot")  # Install if needed
+library(ggcorrplot)
+}
+
+
+if (!require("skimr")) {
+install.packages("skimr")
+library(skimr)
+}
+
+if (!require("DataExplorer")) {
+install.packages("DataExplorer")
+library(DataExplorer)
+}
+
+if (!require("glmnet")) {
+install.packages("glmnet")
+library(glmnet)
+}
+
+
+if (!require("pander")) {
+install.packages("pander")
+library(pander)
+}
+
+if (!require("ROCR")) {
+install.packages("ROCR")
+library(ROCR)
+}
+
+if (!require("e1071")) {
+install.packages("e1071")
+library(e1071)
+}
+## 
+knitr::opts_chunk$set(echo = TRUE,   # include code chunk in the output file
+                      warning = FALSE,# sometimes, you code may produce warning messages,
+                                      # you can choose to include the warning messages in
+                                      # the output file. 
+                      results = TRUE, # you can also decide whether to include the output
+                                      # in the output file.
+                      message = FALSE,
+                      comment = NA
+                      )  
+```
+
+## Objective
+
+This project aims to develop a bankruptcy prediction model using Support Vector Machines (SVM) and Regularized Regression techniques in R. By leveraging historical financial data, the model will classify companies based on their likelihood of bankruptcy. The objective is to compare the performance of SVM and regularized regression methods in terms of predictive accuracy, interpretability, and robustness. Additionally, the project seeks to identify key financial indicators that contribute to bankruptcy risk, providing insights for financial analysts and decision-makers.
+
+## Introduction
+
+Description of data:
+
+1. **Bankrupt** (int, target variable) – Indicates whether a company has gone bankrupt (0 = No, 1 = Yes).  
+2. **Current_Ratio** (float) – Measures a company’s ability to pay short-term obligations (current assets / current liabilities).  
+3. **Quick_Ratio** (float) – A liquidity metric that excludes inventory from current assets (quick assets / current liabilities).  
+4. **Total_debt_by_Total_networth** (float) – Represents the company’s total debt in proportion to its net worth.  
+5. **Debt_ratio_Percent** (float) – The percentage of a company’s assets financed by debt (total debt / total assets * 100).  
+6. **Operating_profit_by_Paidin_capital** (float) – Measures profitability in relation to paid-in capital.  
+7. **Total_Asset_Turnover** (float) – Indicates how efficiently a company utilizes its assets to generate sales.  
+8. **Working_Capital_to_Total_Assets** (float) – Proportion of working capital in total assets, reflecting liquidity.  
+9. **Cash_Flow_to_Total_Assets** (float) – Measures how much cash flow a company generates relative to its total assets.  
+10. **Cash_Flow_to_Liability** (float) – Represents the proportion of cash flow available to cover liabilities.  
+11. **Current_Liability_to_Current_Assets** (float) – Ratio of current liabilities to current assets, indicating liquidity risk.  
+12. **Gross_Profit_to_Sales** (float) – Percentage of gross profit generated from total sales (gross profit / sales).  
+13. **Leverage_SD** (categorical) – Categorized as "Low," "Moderate," or other levels, representing the company's leverage risk.  
+
+
+```{r data, include=FALSE}
+# Read the dataset from a CSV file
+df <- read.csv("https://bhavana-dotcom.github.io/Project2/data.csv")  # Replace with your file path
+
+# Sample 2000 rows
+#set.seed(123)  # Optional: Set seed for reproducibility
+#df <- data[sample(nrow(data), 1000), ]
+
+# Write the sampled data to a new CSV file
+#write.csv(df, "C:/Users/agaja/Downloads/STA 552 Project 2/sampled_data.csv", row.names = FALSE)  # Replace with your desired output file path
+str(df)
+```
+
+```{r include=FALSE}
+#summary(df$Total_debt_by_Total_networth)
+#hist(df$Total_debt_by_Total_networth, breaks = 30, main = "Distribution of Debt-to-Net Worth Ratio")
+mean_val <- mean(df$Total_debt_by_Total_networth, na.rm = TRUE)
+sd_val <- sd(df$Total_debt_by_Total_networth, na.rm = TRUE)
+
+df$Leverage_SD <- cut(df$Total_debt_by_Total_networth, 
+                      breaks = c(-Inf, mean_val - sd_val, mean_val + sd_val, Inf), 
+                      labels = c("Low", "Moderate", "High"))
+
+df$Leverage_SD <- as.factor(df$Leverage_SD)
+
+```
+
+
+```{r include=FALSE}
+
+# Function to count missing values in all variables
+count_missing_values <- function(data) {
+  data %>%
+    mutate(across(where(is.character), ~ na_if(., ""))) %>%
+    summarise_all(~ sum(is.na(.))) %>%
+    pivot_longer(everything(), names_to = "variable", values_to = "missing_count")
+}
+# Use the function
+missing_values <- count_missing_values(df)
+
+print(missing_values)
+```
+
+```{r include=FALSE}
+summary(df)
+str(df)
+```
+
+## Relationship between Features
+
+**Correlation Plot**
+
+The correlation matrix heatmap visually represents the relationships between financial variables and bankruptcy status. Notable insights include a negative correlation between **Current Ratio** and **Bankruptcy (-0.32)**, indicating that companies with lower liquidity are more likely to go bankrupt. **Total debt to Total net worth (0.38)** and **Debt Ratio Percent (0.22)** show positive correlations with bankruptcy, suggesting higher leverage increases bankruptcy risk. A strong positive correlation (**0.87**) exists between **Cash Flow to Liability** and **Cash Flow to Total Assets**, while **Current Ratio** and **Quick Ratio** are also highly correlated (**0.76**), reflecting interdependencies among liquidity metrics. These insights can aid in financial risk assessment and bankruptcy prediction modeling.
+
+```{r}
+df_num <- df
+df_num$Bankrupt <- as.numeric(as.factor(df_num$Bankrupt))
+numeric_features <- df_num %>% select_if(is.numeric)
+# Compute correlation matrix
+cor_matrix <- cor(numeric_features, use = "complete.obs")
+
+# Plot heatmap
+ggcorrplot(cor_matrix, method = "circle", type = "lower", lab = TRUE)
+
+```
+
+
+## Relationship between Features
+
+**Relationship between highly correlated numerical features using Scatter Plot**
+
+The scatter plot of Cash Flow to Total Assets (CF/TA) vs. Cash Flow to Liabilities (CF/L) reveals a strong positive correlation, indicating that firms generating higher cash flow relative to their assets also tend to have higher cash flow relative to their liabilities. The majority of data points cluster along a linear trend, suggesting a consistent relationship between asset utilization and liability coverage. A few outliers above the main cluster suggest firms with exceptionally strong cash flow management or low liabilities, while those below the trend may indicate companies struggling with debt repayment. This analysis highlights the overall financial efficiency and potential risk factors within the dataset.
+
+
+```{r}
+# Scatter plot using ggplot2
+ggplot(df, aes(x=Cash_Flow_to_Total_Assets, y=Cash_Flow_to_Liability)) +
+  geom_point(color="blue", alpha=0.5) +
+  ggtitle(" Cash Flow to Total Assets vs Cash Flow to Liability") +
+  xlab("Cash Flow to Total Assets ") +
+  ylab("Cash Flow to Liability")
+
+```
+
+
+**Relationship between Target Variable(Bankrupt) and a categorical feature using heatmap**
+
+
+The heatmap illustrates the relationship between **leverage level (Total Debt to Total Net Worth) and bankruptcy status**. The majority of firms classified under the **"Moderate" leverage category** are non-bankrupt (deep blue), while a smaller portion within this category has gone bankrupt (lighter purple). There are no firms categorized under **"High" leverage**, which might suggest data imbalance or absence of high-leverage firms in the dataset. This visualization highlights that companies with moderate leverage are more prevalent, but some still face bankruptcy risks.
+
+
+```{r}
+df$Bankrupt <- as.factor(df$Bankrupt)
+
+heatmap_data <- df %>%
+  count(Bankrupt, Leverage_SD)
+
+# Heatmap: Relationship between Default and Employment Status
+ggplot(heatmap_data, aes(x = Bankrupt, y = Leverage_SD , fill = n)) +
+  geom_tile() +
+  labs(title = "Heatmap: Bankrupt vs Leverage Level (Total Debt to Total Net Worth)",
+       x = "Bankrupt", y = "Leverage_SD") +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal()
+```
+
+**Box Plot**
+
+The box plot compares the **Current Ratio** between bankrupt and non-bankrupt firms. Non-bankrupt firms (teal) tend to have a higher median current ratio compared to bankrupt firms (yellow), indicating better liquidity. The interquartile range (IQR) for non-bankrupt firms is wider, suggesting more variation in liquidity levels. Bankrupt firms have a lower median current ratio, with a more compressed distribution, showing that lower liquidity is associated with financial distress. Additionally, both groups have outliers, but the non-bankrupt firms exhibit a greater range of higher current ratios.
+
+
+```{r}
+
+# Box Plot: Relationship between Bankrupt (Categorical) and  Current Ratio (Numerical)
+ggplot(df, aes(x = Bankrupt, y = Current_Ratio, fill = Bankrupt)) +
+  geom_boxplot() +
+  labs(title = "Box Plot: Bankrupt vs Current Ratio",
+       x = "Bankrupt Status", y = "Current Ratio") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")
+
+```
+
+## Skewness
+
+
+The skewness analysis reveals that several financial variables exhibit significant skewness, indicating asymmetric distributions. **Highly skewed variables** include **Quick Ratio, Total Debt to Total Net Worth, Debt Ratio Percent, Operating Profit by Paid-in Capital, Total Asset Turnover, Working Capital to Total Assets, Cash Flow to Total Assets, Cash Flow to Liability, Current Liability to Current Assets, and Gross Profit to Sales.** Notably, **Cash Flow to Liability (-9.58)** and **Total Debt to Total Net Worth (16.23)** have extreme skewness values, suggesting a strong deviation from normality. These findings indicate potential data transformations may be necessary for statistical modeling.
+
+```{r}
+
+
+# Select only numeric columns
+numeric_vars <- df[, sapply(df, is.numeric)]
+# Compute skewness for each numeric variable
+skewness_values <- sapply(numeric_vars, skewness, na.rm = TRUE)
+
+# Identify highly skewed variables
+skewed_vars <- names(skewness_values[abs(skewness_values) > 1])
+
+# Print results
+#print("Skewness values:")
+#print(skewness_values)
+print("Highly skewed variables:")
+print(skewed_vars)
+# Create a histogram for Skewed Numeric Variable - No of Credit Accounts
+#hist(numeric_vars$No_of_credit_acc, main = "Histogram of No of Credit Accounts", xlab = "No of Credit Accounts",      col = "lightblue",      breaks = 30)
+
+
+```
+
+## Feature Transformation, Standardization & Normalization
+
+Feature transformation and standardization are essential for regularized regression techniques like Ridge, Lasso, and Elastic Net to ensure optimal model performance. Many financial ratios exhibit high skewness, which can distort relationships and reduce predictive accuracy. Applying transformations (such as log or Box-Cox) helps normalize these distributions, improving model stability. Additionally, standardization ensures that all features contribute equally to the regularization penalty, preventing variables with larger scales from dominating the model. This preprocessing step enhances interpretability, mitigates multicollinearity, and improves convergence in optimization algorithms, leading to more reliable and generalizable predictions.
+
+
+```{r}
+
+df_norm_stan <- df
+df_norm_stan$Bankrupt <- as.numeric(as.factor(df$Bankrupt))
+df_norm_stan$Leverage_SD <- as.numeric(as.factor(df$Leverage_SD))
+
+# Normalization
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+df_norm_stan$Current_Ratio_norm <- normalize(df$Current_Ratio)
+df_norm_stan$Quick_Ratio_norm <- normalize(df$Quick_Ratio)
+df_norm_stan$Total_debt_by_Total_networth_norm <- normalize(df$Total_debt_by_Total_networth)
+df_norm_stan$Operating_profit_by_Paidin_capital_norm <- normalize(df$Operating_profit_by_Paidin_capital)
+df_norm_stan$Total_Asset_Turnover_norm <- normalize(df$Total_Asset_Turnover)
+df_norm_stan$Cash_Flow_to_Total_Assets_norm <- normalize(df$Cash_Flow_to_Total_Assets)
+df_norm_stan$Cash_Flow_to_Liability_norm <- normalize(df$Cash_Flow_to_Liability)
+df_norm_stan$Current_Liability_to_Current_Assets_norm <- normalize(df$Current_Liability_to_Current_Assets)
+df_norm_stan$Gross_Profit_to_Sales_norm <- normalize(df$Gross_Profit_to_Sales)
+df_norm_stan$Debt_ratio_Percent_norm <- normalize(df$Debt_ratio_Percent)
+df_norm_stan$Working_Capital_to_Total_Assets <- normalize(df$Working_Capital_to_Total_Assets)
+
+
+# Log transformation
+
+
+df_norm_stan$Quick_Ratio_trans <- log(df$Quick_Ratio + 1)
+df_norm_stan$Total_debt_by_Total_networth_trans <- log(df$Total_debt_by_Total_networth + 1)
+df_norm_stan$Operating_profit_by_Paidin_capital_trans <- log(df$Operating_profit_by_Paidin_capital+1)
+df_norm_stan$Total_Asset_Turnover_trans <- log(df$Total_Asset_Turnover+1)
+df_norm_stan$Cash_Flow_to_Total_Assets_trans <- log(df$Cash_Flow_to_Total_Assets+1)
+df_norm_stan$Cash_Flow_to_Liability_trans <- log(df$Cash_Flow_to_Liability+1)
+df_norm_stan$Current_Liability_to_Current_Assets_trans <- log(df$Current_Liability_to_Current_Assets+1)
+df_norm_stan$Gross_Profit_to_Sales_trans <- log(df$Gross_Profit_to_Sales+1)
+df_norm_stan$Debt_ratio_Percent_trans <- log(df$Debt_ratio_Percent+1)
+df_norm_stan$Working_Capital_to_Total_Assets_trans <- log(df$Working_Capital_to_Total_Assets+1)
+
+
+
+# Standardization
+standardize <- function(x) {
+  return((x - mean(x)) / sd(x))
+}
+
+df_norm_stan$Current_Ratio_stand <- standardize(df_norm_stan$Current_Ratio)
+df_norm_stan$Quick_Ratio_stand <- standardize(df_norm_stan$Quick_Ratio_trans)
+df_norm_stan$Total_debt_by_Total_networth_stand <- standardize(df_norm_stan$Total_debt_by_Total_networth_trans)
+df_norm_stan$Operating_profit_by_Paidin_capital_stand <- standardize(df_norm_stan$Operating_profit_by_Paidin_capital_trans)
+df_norm_stan$Total_Asset_Turnover_stand <- standardize(df_norm_stan$Total_Asset_Turnover_trans)
+df_norm_stan$Cash_Flow_to_Total_Assets_stand <- standardize(df_norm_stan$Cash_Flow_to_Total_Assets_trans)
+df_norm_stan$Cash_Flow_to_Liability_stand <- standardize(df_norm_stan$Cash_Flow_to_Liability_trans)
+df_norm_stan$Current_Liability_to_Current_Assets_stand <- standardize(df_norm_stan$Current_Liability_to_Current_Assets_trans)
+df_norm_stan$Gross_Profit_to_Sales_stand <- standardize(df_norm_stan$Gross_Profit_to_Sales_trans)
+df_norm_stan$Debt_ratio_Percent_stand <- standardize(df_norm_stan$Debt_ratio_Percent_trans)
+df_norm_stan$Working_Capital_to_Total_Assets_stand <- standardize(df_norm_stan$Working_Capital_to_Total_Assets_trans)
+
+
+#full_model <- glm(Default ~ ., data = new_df, family = binomial)  
+#summary(full_model)
+
+#final_model <- glm(Default ~ Checking_amount+Term+Credit_score+Age, data = new_df, family = binomial )
+#summary(final_model)
+
+# Keep only standardized columns and target variable
+df_stan <- df_norm_stan %>% select(Bankrupt, Leverage_SD, ends_with("_stand"))
+
+# View structure of the standardized dataset
+#str(df_stan)
+
+```
+
+## Principal Component Analysis
+
+The Principal Component Analysis (PCA) results indicate that the first few principal components capture most of the variance in the dataset, with PC1 alone explaining 27.7% and the first five components accounting for approximately 70.7% of the total variance. The scree plot further confirms that beyond a certain number of components, the variance explained drops significantly, suggesting that dimensionality reduction is feasible. The scatter plot of the first two principal components shows some clustering but also highlights outliers that may influence the analysis. Overall, applying PCA in this project is beneficial as it helps reduce dimensionality while retaining most of the important information, improving model efficiency and interpretability, especially when dealing with highly correlated and skewed variables.
+
+```{r}
+
+# Step 1: Convert categorical variables to numeric using one-hot encoding
+df_numeric <- df %>%
+ mutate(across(c(Bankrupt, Leverage_SD), as.factor)) %>%  # Convert to factors
+   dummyVars(~ ., data = .) %>%      
+  predict(newdata = df) %>% 
+   as.data.frame()
+ 
+ # Step 2: Select only numeric features
+ numeric_data <- df_numeric %>% select_if(is.numeric)
+ 
+ # Step 3: Handle missing and infinite values
+ numeric_data[is.na(numeric_data)] <- 0   # Replace NAs with 0 (or use median imputation)
+ 
+ constant_cols <- apply(numeric_data, 2, function(col) var(col, na.rm = TRUE) == 0)
+numeric_data <- numeric_data[, !constant_cols]
+
+ 
+ # Step 4: Standardize the data (only after handling missing values)
+ scaled_data <- scale(numeric_data)
+ 
+ # Step 5: Perform PCA
+ pca_result <- prcomp(scaled_data, center = TRUE, scale = TRUE)
+ 
+ summary(pca_result)
+ 
+ # Step 6: Scree Plot (to decide number of components to keep)
+ screeplot(pca_result, type = "lines", main = "Scree Plot")
+ 
+ # Step 7: Biplot (PCA visualization)
+# biplot(pca_result, scale = 0)
+ 
+ # Step 8: Scatter plot of first two principal components
+ pca_df <- as.data.frame(pca_result$x)
+ ggplot(pca_df, aes(x = PC1, y = PC2)) +
+   geom_point(size = 3, alpha = 0.7, color = "blue") +
+ labs(title = "PCA - First Two Principal Components") +
+   theme_minimal()
+
+```
+
+
+## Regularization
+
++ Regularized Logistic Regression:
+
+
+The results from the LASSO regularized regression analysis provide key insights into feature selection and model performance.
+
+Coefficient Path Plot (Left Panel): This plot shows how the regression coefficients shrink as the regularization parameter (λ) increases. Initially, at low λ values (right side of the plot), most predictors have nonzero coefficients, meaning they are actively contributing to the model. As λ increases (moving left), many coefficients shrink toward zero, demonstrating LASSO’s ability to enforce sparsity by selecting only the most important features. The red dashed line represents the λ value that minimizes cross-validation error, striking a balance between model complexity and predictive power. The blue dashed line represents the most regularized model within one standard error of the minimum cross-validation error, often chosen for better generalization.
+
+Model Fit Plot (Right Panel): This plot illustrates the binomial deviance (a measure of model error) for different λ values. The curve initially decreases, indicating that moderate regularization improves model performance by reducing overfitting. The red points represent mean deviance values, with error bars showing variability. The deviance reaches its lowest point around λ≈−5 (log scale), after which it increases as excessive regularization removes too many important features, leading to underfitting.
+
+
+```{r}
+
+
+
+df <- df_stan
+
+# Split the data into predictors (X) and response (y)
+X <- model.matrix(Bankrupt ~ ., df_stan)[,-1]  # Remove the intercept column
+y <- df$Bankrupt
+
+# Split the data into training and testing sets
+set.seed(123)
+trainIndex <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[trainIndex, ]
+X_test <- X[-trainIndex, ]
+y_train <- y[trainIndex]
+y_test <- y[-trainIndex]
+
+#table(y_test)
+####################
+# Fit LASSO model
+####################
+lasso_model <- glmnet(X_train, y_train, family = "binomial", alpha = 1)
+
+# Cross-validation to find the optimal lambda
+cv_lasso <- cv.glmnet(X_train, y_train, family = "binomial", alpha = 1)
+
+# Optimal lambda
+lambda_lasso <- cv_lasso$lambda.min
+
+# Refit the model with the optimal lambda
+lasso_model_opt <- glmnet(X_train, y_train, 
+                          family = "binomial", 
+                          alpha = 1, 
+                          lambda = lambda_lasso)
+
+```
+
+```{r}
+
+## Visualize the impact of lambda on shrinking coefficients
+# Plot coefficient paths
+par(mar=c(5,4,6,2), mfrow=c(1,2)) # 
+plot(lasso_model, xvar = "lambda", label = TRUE,
+     col = rainbow(8),
+     lwd = 1,
+     main = "Coefficient Path Plot: LASSO",
+     cex.main = 0.8)
+text(-6, 0.4, "minimum CV error", col="red", cex = 0.6 )
+abline(v = log(cv_lasso$lambda.min), col = "red", lty = 4, lwd = 1)
+abline(v = log(cv_lasso$lambda.1se), col = "blue", lty = 4, lwd = 1)
+
+plot(cv_lasso, main="Measure of Model Fit: LASSO", cex.main = 0.8)
+
+```
+
+
+```{r}
+
+####################
+# Fit Ridge model
+####################
+ridge_model <- glmnet(X_train, y_train, family = "binomial", alpha = 0)
+
+# Cross-validation to find the optimal lambda
+cv_ridge <- cv.glmnet(X_train, y_train, family = "binomial", alpha = 0)
+
+# Optimal lambda
+lambda_ridge <- cv_ridge$lambda.min
+
+# Refit the model with the optimal lambda
+ridge_model_opt <- glmnet(X_train, y_train, 
+                          family = "binomial", 
+                          alpha = 0, 
+                          lambda = lambda_ridge)
+
+```
+
+```{r}
+
+############################################
+# Fit Elastic Net model (e.g., alpha = 0.5)
+############################################
+elastic_model <- glmnet(X_train, y_train, family = "binomial", alpha = 0.5)
+
+# Cross-validation to find the optimal lambda
+cv_elastic <- cv.glmnet(X_train, y_train, family = "binomial", alpha = 0.5)
+
+# Optimal lambda
+lambda_elastic <- cv_elastic$lambda.min
+
+# Refit the model with the optimal lambda
+elastic_model_opt <- glmnet(X_train, y_train, 
+                            family = "binomial", 
+                            alpha = 0.5, 
+                            lambda = lambda_elastic)
+
+```
+
+```{r}
+
+lasso.coef <- as.matrix(coef(lasso_model_opt))
+ridge.coef <- as.matrix(coef(ridge_model_opt))
+elastic.coef <- as.matrix(coef(elastic_model_opt))
+regularized.coef <- data.frame(lasso = lasso.coef[,1],
+                               ridge = ridge.coef[,1],
+                          elasticnet = elastic.coef[,1])
+pander(regularized.coef)
+
+```
+
+## Optimal Cuttoff Probability Determination
+
+Optimal Cutoff Probability for this model is 0 for the reasons below:
+
+Class Imbalance: A highly imbalanced dataset may cause the model to favor the majority class, leading to an optimal cut-off of 0 for maximum accuracy.
+
+Over-Regularization: Strong regularization (high lambda values) can shrink coefficients, reducing the model’s ability to differentiate between classes.
+
+Bias in Probability Estimates: If predicted probabilities are skewed toward higher values, the model may classify most instances as the positive class, making 0 the best cut-off.
+
+Accuracy as a Misleading Metric: Since accuracy does not account for class distribution, alternative metrics such as AUC-ROC, precision-recall, and F1-score should be considered for better threshold selection.
+
+```{r}
+
+############################
+# Predict on the test set: type = "class" uses the default 
+# cut-off probability to be 0.5.
+predict_lasso <- predict(lasso_model_opt, newx = X_test, type = "response")
+predict_ridge <- predict(ridge_model_opt, newx = X_test, type = "response")
+predict_elastic <- predict(elastic_model_opt, newx = X_test, type = "response")
+
+
+###########################################
+## Optimal cutoff probability determination
+seq.cut <- seq(0,1, length=50)
+# y is a vector of 0 and 1
+acc.lasso <- NULL
+acc.ridge <- NULL
+acc.elastic <- NULL
+for (i in 1:length(seq.cut)){
+   predy.lasso <- ifelse(predict_lasso >seq.cut[i], 1, 0)
+   predy.ridge<- ifelse(predict_ridge >seq.cut[i], 1, 0)
+   predy.elastic<- ifelse(predict_elastic >seq.cut[i], 1, 0)
+   ##
+   acc.lasso[i] <- mean(y_test  == predy.lasso)
+   acc.ridge[i] <- mean(y_test == predy.ridge)
+   acc.elastic[i] <- mean(y_test  == predy.elastic)
+}
+## optimal cut-off: if the maximum accuracy occurs at multiple
+## cut-off probabilities, the average of these cutoff probabilities
+## will be defined as the optimal cutoff probability
+opt.cut.lasso <- mean(seq.cut[which(acc.lasso==max(acc.lasso))])
+opt.cut.ridge<- mean(seq.cut[which(acc.ridge==max(acc.ridge))])
+opt.cut.elastic <- mean(seq.cut[which(acc.elastic==max(acc.elastic))])
+##
+
+
+
+# Print optimal cutoff probabilities
+#cat("Optimal Cutoff for LASSO:", opt.cut.lasso, "\n")
+#cat("Optimal Cutoff for Ridge:", opt.cut.ridge, "\n")
+#cat("Optimal Cutoff for Elastic Net:", opt.cut.elastic, "\n")
+
+acc.data <- data.frame(prob = rep(seq.cut,3), 
+                       acc=c(acc.lasso, acc.ridge, acc.elastic), 
+                       group = c(rep("lasso",50), rep("ridge",50), rep("elastic",50)))
+
+```
+
+
+## Accuracy Plot
+
+The accuracy vs. cut-off probability plot indicates that all three models—LASSO, Ridge, and Elastic Net—exhibit nearly identical classification performance, achieving maximum accuracy (~0.7511) at a low cut-off threshold. As the cut-off increases, accuracy declines sharply, suggesting a strong class imbalance or threshold sensitivity. The models predominantly favor the majority class at lower thresholds, leading to higher accuracy but potentially poor sensitivity for minority class detection. The rapid decline in accuracy beyond a 0.1 cut-off suggests that misclassification rates increase significantly. This indicates that accuracy alone may not be the best evaluation metric, warranting additional assessments such as AUC-ROC and F1-score. Optimizing the threshold using these alternative metrics could enhance predictive performance.
+
+
+```{r}
+
+##
+gg.acc <- ggplot(data = acc.data, aes(x=prob, y = acc, color = group)) +
+  geom_line() +
+  annotate("text", x = 0.6, y = 0.45, 
+           label = paste( "Accuracy: ", round(max(acc.lasso),5), 
+                         "\nAccuracy: ", round(max(acc.ridge),5), 
+                         "\nAccuracy: ", round(max(acc.elastic),5)), 
+           size = 3, 
+           color = "navy") +
+  ggtitle("Cut-off Probability vs Accuracy") +
+  labs(x = "cut-off Probability", 
+       y = "accuracy", color = "Group") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+##
+ggplotly(gg.acc)
+
+
+```
+
+
+
+## Confusion Matrix
+
+The performance metrics for LASSO, Ridge, and Elastic Net regression models indicate strong recall (0.9704) across all models, suggesting that they effectively identify the positive class. However, specificity is relatively low (0.3929–0.375), meaning the models struggle to correctly classify negative instances, likely due to class imbalance. Precision values (~0.82) and F1-scores (~0.89) confirm a good balance between precision and recall, favoring sensitivity. The balanced accuracy values (0.6816 for LASSO, 0.6638 for Ridge, and 0.6727 for Elastic Net) indicate moderate overall performance, with LASSO slightly outperforming the other models. These results suggest that while the models are strong in detecting positives, further threshold tuning or alternative evaluation metrics (such as AUC-ROC) may improve classification of negative cases.
+
+```{r}
+#######################################
+## using the optimal cutoff probability to predict labels
+## 
+#pred.lab.lasso <- ifelse(predict_lasso >opt.cut.lasso, 1, 0)
+#pred.lab.ridge<- ifelse(predict_ridge >opt.cut.ridge, 1, 0)
+#pred.lab.elastic<- ifelse(predict_elastic >opt.cut.elastic, 1, 0)
+
+
+new_threshold <- 0.5  # Try adjusting this
+pred.lab.lasso <- ifelse(predict_lasso > new_threshold, 1, 0)
+pred.lab.ridge<- ifelse(predict_ridge >new_threshold, 1, 0)
+pred.lab.elastic<- ifelse(predict_elastic >new_threshold, 1, 0)
+
+
+#################################
+# Convert predictions to factors
+pred.lab.lasso.fct <- as.factor(pred.lab.lasso)
+pred.lab.ridge.fct <- as.factor(pred.lab.ridge)
+pred.lab.elastic.fct <- as.factor(pred.lab.elastic)
+y_test <- factor(ifelse(y_test == 2, 1, 0), levels = c(0, 1))
+
+#table(pred.lab.lasso.fct)
+#table(y_test)
+
+# Confusion Matrix and Metrics
+confusion.lasso <- confusionMatrix(pred.lab.lasso.fct, y_test)
+confusion.ridge<- confusionMatrix(pred.lab.ridge.fct, y_test)
+confusion.elastic <- confusionMatrix(pred.lab.elastic.fct, y_test)
+
+## Commonly used performance measured
+PerfMeasures <- cbind(lasso = confusion.lasso$byClass, 
+                     ridge = confusion.ridge$byClass, 
+                     elastic = confusion.elastic$byClass)
+pander(PerfMeasures)
+
+
+```
+
+
+## ROC Analysis
+
+
+The ROC curve compares the performance of three logistic regression models—LASSO, Ridge, and Elastic Net—based on their ability to distinguish between classes. The area under the curve (AUC) values indicate that all three models perform similarly, with Elastic Net achieving the highest AUC (0.841), followed closely by LASSO (0.84) and Ridge (0.838). These values suggest that the models have good predictive capabilities, with Elastic Net slightly outperforming the others in terms of classification accuracy.
+
+```{r}
+
+# library(pROC)
+# Predicted probabilities for each model: type = "response"
+prob_lasso <- predict(lasso_model_opt, newx = X_test, type = "response")
+prob_ridge <- predict(ridge_model_opt, newx = X_test, type = "response")
+prob_elastic <- predict(elastic_model_opt, newx = X_test, type = "response")
+
+# Compute ROC curves: roc object contains a lot information including
+# sensitivity, specificity, AUC, etc.
+roc_lasso <- roc(y_test, prob_lasso)
+roc_ridge <- roc(y_test, prob_ridge)
+roc_elastic <- roc(y_test, prob_elastic)
+
+# Compute AUC values
+auc_lasso <- auc(roc_lasso)
+auc_ridge <- auc(roc_ridge)
+auc_elastic <- auc(roc_elastic)
+
+## LASSO
+sen.lasso <- roc_lasso$sensitivities
+spe.lasso <- roc_lasso$specificities
+auc.lasso <- roc_lasso$auc
+
+## Ridge
+sen.ridge <- roc_ridge$sensitivities
+spe.ridge <- roc_ridge$specificities
+auc.ridge <- roc_ridge$auc
+
+## Elastic Net
+sen.elastic <- roc_elastic$sensitivities
+spe.elastic <- roc_elastic$specificities
+auc.elastic <- roc_elastic$auc
+
+## Plotting the ROC curves: three colors - green, orange, and purple
+
+plot(1-spe.lasso, sen.lasso, 
+     type = "l",
+     col = "green", 
+     xlim=c(0,1),
+     xlab = "1 - specificity",
+     ylab = "sensitivity",
+     main = "ROC Curves for LASSO, Ridge, and Elastic Net")
+lines(1-spe.ridge, sen.ridge, col = "orange")
+lines(1-spe.elastic, sen.elastic, col = "purple")
+abline(0,1, type = "l", lty = 2, col = "steelblue", lwd = 1)
+
+# Add legend
+legend("bottomright", legend = c(paste("LASSO (AUC =", round(auc_lasso, 3), ")"),
+                                paste("Ridge (AUC =", round(auc_ridge, 3), ")"),
+                                paste("Elastic Net (AUC =", round(auc_elastic, 3), ")")),
+       col = c("green", "orange", "purple"), lty = 1, cex = 0.8, bty = "n")
+
+```
+
+## Support Vector Machine for Classification
+
+The results represent a confusion matrix from a Support Vector Machine (SVM) classification model, where:  
+
+- **206** true negatives (correctly classified as class 0)  
+- **14** false positives (misclassified as class 1 but actually class 0)  
+- **58** false negatives (misclassified as class 0 but actually class 1)  
+- **61** true positives (correctly classified as class 1)  
+
+### **Analysis:**  
+1. **Accuracy**:  The model achieves an accuracy of approximately **78.76%**.
+
+2. **Precision (Positive Predictive Value)** for Class 1: When the model predicts class 1, it is correct about **81.33%** of the time.
+
+3. **Recall (Sensitivity or True Positive Rate)** for Class 1: The model correctly identifies **51.26%** of actual class 1 instances, indicating that it misses a significant number of positives.
+
+4. **Specificity (True Negative Rate)**: The model correctly identifies **93.63%** of actual class 0 instances, showing strong performance in recognizing negatives.
+
+5. **Optimal Cutoff:** **0.1742**  
+   - The classification threshold (cutoff) was optimized to **0.1742**, meaning that any predicted probability above this is classified as class 1.  
+   - A low threshold like this suggests the model is designed to be more sensitive to detecting class 1, likely to reduce false negatives. However, this also increases the false positive rate.
+
+ 
+The SVM classifier performs well in identifying class 0 (high specificity) but struggles with class 1 (low recall). The optimal threshold (0.1742) was chosen to balance sensitivity and specificity, but the recall for class 1 remains relatively low. If misclassifying class 1 is costly, adjusting the threshold or model tuning (e.g., changing kernel functions, regularization parameters) may improve recall.
+
+
+```{r}
+
+
+# Load the dataset
+
+df$Bankrupt <- as.factor(df$Bankrupt)
+
+# Train-test split
+set.seed(123)
+index <- sample(1:nrow(df), 0.7 * nrow(df))
+train.data <- df[index, ]
+test.data <- df[-index, ]
+
+# Set up custom cross-validation control
+tune_control <- tune.control(cross = 5, nrepeat = 1)
+
+# Perform a grid search for the best hyperparameters
+tune.RBF <- tune(
+  svm,
+  Bankrupt ~ .,
+  data = train.data,
+  kernel = "radial",
+  ranges = list(cost = 10^(-1:2), gamma = c(0.1, 0.5, 1, 2)),
+  tunecontrol = tune_control
+)
+
+# Extract the best model
+best.RBF <- tune.RBF$best.model
+
+# Train final model with probability estimation
+tuned.svm <- svm(
+  Bankrupt ~ .,
+  data = train.data,
+  kernel = "radial",
+  cost = best.RBF$cost,
+  gamma = best.RBF$gamma,
+  probability = TRUE
+)
+
+# Predict probabilities
+pred.probs <- predict(tuned.svm, test.data, probability = TRUE)
+pred.probs <- attr(pred.probs, "probabilities")[, 2]  # Extract probabilities for class "1"
+
+# Compute optimal cutoff by minimizing distance to (0,1) in ROC space
+pred <- prediction(pred.probs, test.data$Bankrupt)
+perf <- performance(pred, "tpr", "fpr")
+
+cutoffs <- data.frame(
+  cutoff = perf@alpha.values[[1]],
+  tpr = perf@y.values[[1]],
+  fpr = perf@x.values[[1]]
+)
+cutoffs$distance <- sqrt((1 - cutoffs$tpr)^2 + cutoffs$fpr^2)
+optimal.cutoff <- cutoffs$cutoff[which.min(cutoffs$distance)]
+
+# Apply optimal cutoff
+pred.optimal.class <- ifelse(pred.probs > optimal.cutoff, 1, 0)
+
+# Confusion matrix with optimal cutoff
+confusion.matrix.optimal <- table(Predicted = pred.optimal.class, Actual = test.data$Bankrupt)
+print(confusion.matrix.optimal)
+
+
+
+# Print optimal cutoff value
+print(paste("Optimal Cutoff: ", optimal.cutoff))
+
+
+
+```
+
+
+
+## Accuracy
+
+
+```{r}
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion.matrix.optimal)) / sum(confusion.matrix.optimal)
+cat("\n\n Accuracy:", accuracy, "\n")
+
+```
+
+
+
+
+
+
+
+## ROC
+
+The ROC curve compares the classification performance of three models: Support Vector Machine (SVM) with a linear kernel, SVM with a radial kernel, and logistic regression. The Area Under the Curve (AUC) values indicate that the radial kernel SVM achieves the best performance (AUC = 0.8756), followed by the linear kernel SVM (AUC = 0.8493), and logistic regression (AUC = 0.8319). This suggests that the radial kernel SVM provides the highest discriminatory power in distinguishing between classes, making it the most effective model for this classification task.
+
+```{r}
+
+
+##
+## Set up custom cross-validation control
+tune.control <- tune.control(
+  cross = 5,  # Use 5-fold cross-validation, the default is 10-fold cross-validation
+  nrepeat = 1 # Number of repetitions (for repeated cross-validation)
+)
+## 
+## Perform a grid search for the best hyperparameters
+tune.lin <- tune(
+  svm,          # using the primary svm() algorithm to tune parameter
+  Bankrupt ~ ., # model formula
+  data = train.data,
+  kernel = "linear",    # You can change the kernel if needed
+  ranges = list(
+    cost = 10^(-1:2)   # tune the hyperparameter C in the loss function
+  ),
+  tunecontrol = tune.control  # Use custom cross-validation settings
+)
+# Print the tuning results for inspection
+# print(tune_result)
+##
+## Extract the best model and hyperparameters
+best.lin <- tune.lin$best.model
+best.cost.lin <- best.lin$cost
+
+tune.RBF <- tune(
+  svm, 
+  Bankrupt ~ ., 
+  data = train.data,
+  kernel = "radial",
+  ranges = list(
+    cost = 10^(-1:2),  # Tune cost
+    gamma = 10^(-3:1)  # Tune gamma
+  ),
+  tunecontrol = tune.control
+)
+
+# Extract best hyperparameters
+best.cost.RBF <- tune.RBF$best.model$cost
+best.gamma.RBF <- tune.RBF$best.model$gamma
+
+# Print the best hyperparameters for inspection
+# cat("Best Cost:", best_cost, "\n")
+# cat("Best Gamma:", best_gamma, "\n")
+##
+## Train the final SVM model with the best hyperparameters
+final.lin <- svm(
+  Bankrupt ~ .,
+  data = train.data,
+  kernel = "linear",
+  cost = best.cost.lin,
+  probability = TRUE
+)
+
+## Request to return probabilities in final.RBF
+
+final.RBF <- svm(
+  Bankrupt ~ .,
+  data = train.data,
+  kernel = "radial",
+  cost = best.cost.RBF,
+  gamma = best.gamma.RBF,
+  probability = TRUE
+)
+########################
+###  logistic regression
+logit.fit <- glm(Bankrupt ~ ., data = train.data, family = binomial)
+AIC.logit <- step(logit.fit, direction = "both", trace = 0)
+pred.logit <- predict(AIC.logit, test.data, type = "response")
+
+###
+####################
+# ROC Curve and AUC
+pred.prob.lin <- predict(final.lin, test.data, probability = TRUE)
+pred.prob.RBF <- predict(final.RBF, test.data, probability = TRUE)
+##
+## extracting probabilities
+prob.linear <- attr(pred.prob.lin, "probabilities")[, 2]
+prob.radial <- attr(pred.prob.RBF, "probabilities")[, 2]
+###
+roc_lin <- roc(test.data$Bankrupt, prob.linear)
+roc_RBF <- roc(test.data$Bankrupt, prob.radial)
+roc_logit <- roc(test.data$Bankrupt, pred.logit)
+### Sen-Spe
+lin.sen <- roc_lin$sensitivities
+lin.spe <- roc_lin$specificities
+rad.sen <- roc_RBF$sensitivities
+rad.spe <- roc_RBF$specificities
+logit.sen <- roc_logit$sensitivities
+logit.spe <- roc_logit$specificities
+## AUC
+auc.lin <- roc_lin$auc
+auc.rad <- roc_RBF$auc
+auc.logit <- roc_logit$auc
+## Plotting ROC curves
+
+plot(1-lin.spe, lin.sen,  
+     xlab = "1 - specificity",
+     ylab = "sensitivity",
+     col = "darkred",
+     type = "l",
+     lty = 1,
+     lwd = 1,
+     main = "ROC Curves of SVM")
+lines(1-rad.spe, rad.sen, 
+      col = "blue",
+      lty = 1,
+      lwd = 1)
+lines(1-logit.spe, logit.sen,      
+      col = "orange",
+      lty = 1,
+      lwd = 1)
+abline(0,1, col = "skyblue3", lty = 2, lwd = 2)
+abline(v=c(0.049,0.151), lty = 3, col = "darkgreen")
+legend("bottomright", c("Linear Kernel", "Radial Kernel", "Logistic Regression"),
+       lty = c(1,1,1), lwd = rep(1,3),
+       col = c("red", "blue", "orange"),
+       bty="n",cex = 0.8)
+## annotation - AUC
+text(0.8, 0.46, paste("Linear AUC: ", round(auc.lin,4)), cex = 0.8)
+text(0.8, 0.4, paste("Radial AUC: ", round(auc.rad,4)), cex = 0.8)
+text(0.8, 0.34, paste("Logistic AUC: ", round(auc.logit,4)), cex = 0.8)
+
+```
+
+
+## Model Comparison
+
+Regularized Classification vs Support Vector Machine Classification:
+
+Regularized classification (Lasso, Ridge, and Elastic Net) and Support Vector Machine (SVM) classification exhibit distinct strengths. Regularized classification models demonstrate high sensitivity (97.04%) across all methods, meaning they effectively capture positive cases. However, their specificity is relatively low (ranging from 35.71% to 39.29%), indicating they struggle with correctly identifying negatives. In contrast, the SVM classifier achieves much higher specificity (93.63%), meaning it is excellent at identifying negative cases, but its sensitivity is significantly lower (51.26%), leading to a higher rate of missed positive cases. Additionally, the SVM model has an overall accuracy of 78.76%, balancing precision and recall with an optimized cutoff of 0.1742. Ultimately, regularized classification models are better suited when capturing positives is critical, whereas SVM is preferable when correctly identifying negatives is a priority.
+
+
